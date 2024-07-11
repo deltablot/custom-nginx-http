@@ -98,14 +98,15 @@ FROM alpine:3.20
 COPY --from=nginx-builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=nginx-builder /etc/nginx/mime.types /etc/nginx/mime.types
 COPY --from=nginx-builder /etc/nginx/fastcgi.conf /etc/nginx/fastcgi.conf
-COPY --from=nginx-builder /var/lib/nginx /var/lib/nginx
 # create the log folder and make the logfiles links to stdout/stderr so docker logs will catch it
 RUN mkdir -p /var/log/nginx \
     && ln -sf /dev/stdout /var/log/nginx/access.log \
     && ln -sf /dev/stderr /var/log/nginx/error.log
-ADD nginx.conf /etc/nginx/nginx.conf
-ADD common.conf /etc/nginx/common.conf
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY common.conf /etc/nginx/common.conf
 RUN mkdir /etc/nginx/conf.d
+COPY brotli.conf /etc/nginx/conf.d
 RUN mkdir /nginx && chown nobody:nobody /nginx
+RUN apk add --no-cache brotli
 USER nobody
 ENTRYPOINT ["nginx"]
