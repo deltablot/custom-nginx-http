@@ -11,7 +11,7 @@ It runs as the `nobody` user.
 Use it as a base for a website
 
 ~~~bash
-FROM deltablot/custom-http-nginx
+FROM ghcr.io/deltablot/custom-http-nginx
 COPY site/ /app
 COPY site.conf /etc/nginx/conf.d
 ~~~
