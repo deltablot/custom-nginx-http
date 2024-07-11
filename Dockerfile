@@ -1,12 +1,7 @@
-FROM alpine:3.19 as nginx-builder
+# This builds an http only nginx, with no extra modules, and no openssl
+FROM alpine:3.20 AS nginx-builder
 
 ENV NGINX_VERSION=1.26.1
-# pin nginx modules versions
-# see https://github.com/google/ngx_brotli/issues/120 for the lack of tags
-# BROKEN HASH: ENV NGX_BROTLI_COMMIT_HASH=63ca02abdcf79c9e788d2eedcc388d2335902e52
-ENV NGX_BROTLI_COMMIT_HASH=6e975bcb015f62e1f303054897783355e2a877dc
-# https://github.com/openresty/headers-more-nginx-module/tags
-ENV HEADERS_MORE_VERSION=v0.37
 # releases can be signed by any key on this page https://nginx.org/en/pgp_keys.html
 # so this might need to be updated for a new release
 # available keys: mdounin, maxim, sb, thresh
@@ -14,7 +9,7 @@ ENV HEADERS_MORE_VERSION=v0.37
 ENV PGP_SIGNING_KEY_OWNER=thresh
 
 # install dependencies: here we use brotli-dev, newer brotli versions we can remove that and build it
-RUN apk add --no-cache git libc-dev pcre2-dev make gcc zlib-dev openssl-dev binutils gnupg cmake brotli-dev
+RUN apk add --no-cache git libc-dev pcre2-dev make gcc binutils gnupg cmake brotli-dev
 
 # create a builder user and group
 RUN addgroup -S -g 3148 builder && adduser -D -S -G builder -u 3148 builder
@@ -23,8 +18,9 @@ WORKDIR /build
 USER builder
 
 # clone the nginx modules
-RUN git clone https://github.com/google/ngx_brotli && cd ngx_brotli && git reset --hard $NGX_BROTLI_COMMIT_HASH && cd ..
-RUN git clone --depth 1 -b $HEADERS_MORE_VERSION https://github.com/openresty/headers-more-nginx-module
+RUN git clone --recurse-submodules https://github.com/google/ngx_brotli && cd ngx_brotli/deps/brotli && mkdir out && cd out \
+    && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed .. \
+    && cmake --build . --config Release --target brotlienc && cd ../../../..
 
 # now start the build
 # get nginx source
@@ -40,6 +36,8 @@ RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then gpg --verify nginx.tgz.asc; f
 # all good now untar and build!
 RUN tar xzf nginx.tgz
 WORKDIR /build/nginx-$NGINX_VERSION
+# change the hardcoded Server header value
+RUN sed -i 's/"Server: nginx" CRLF/"Server: d" CRLF/' src/http/ngx_http_header_filter_module.c
 # Compilation flags
 # -g0: Disable debugging symbols generation (decreases binary size)
 # -O3: Enable aggressive optimization level 3 (improves code execution speed)
@@ -57,29 +55,27 @@ WORKDIR /build/nginx-$NGINX_VERSION
 RUN ./configure \
         --prefix=/var/lib/nginx \
         --sbin-path=/usr/sbin/nginx \
-        --with-cc-opt='-g0 -O3 -fstack-protector-strong -flto -pie --param=ssp-buffer-size=4 -Wformat -Werror=format-security -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,-z,noexecstack -fPIC'\
+        --with-cc-opt='-g0 -O3 -fstack-protector-strong -flto -pie --param=ssp-buffer-size=4 -Wformat -Werror=format-security -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,-z,noexecstack -fPIC -static -static-libgcc' \
+        --with-ld-opt='-static' \
         --modules-path=/usr/lib/nginx/modules \
         --conf-path=/etc/nginx/nginx.conf \
-        --pid-path=/run/nginx.pid \
+        --pid-path=/nginx/nginx.pid \
         --error-log-path=/var/log/nginx/error.log \
         --http-log-path=/var/log/nginx/access.log \
-        --lock-path=/run/nginx.lock \
-        --http-client-body-temp-path=/run/nginx-client_body \
-        --http-fastcgi-temp-path=/run/nginx-fastcgi \
-        --user=nginx \
-        --group=nginx \
+        --lock-path=/nginx/nginx.lock \
+        --http-client-body-temp-path=/nginx/nginx-client_body \
+        --http-fastcgi-temp-path=/nginx/nginx-fastcgi \
+        --user=nobody \
+        --group=nobody \
         --with-threads \
-        --with-http_ssl_module \
-        --with-http_v2_module \
         --with-http_realip_module \
-        --with-http_gzip_static_module \
         --with-http_stub_status_module \
         --add-module=/build/ngx_brotli \
-        --add-module=/build/headers-more-nginx-module \
         --without-http_autoindex_module \
         --without-http_browser_module \
         --without-http_empty_gif_module \
         --without-http_geo_module \
+        --without-http_gzip_module \
         --without-http_limit_conn_module \
         --without-http_limit_req_module \
         --without-http_map_module \
@@ -97,3 +93,19 @@ RUN ./configure \
 
 USER root
 RUN make install
+
+FROM alpine:3.20
+COPY --from=nginx-builder /usr/sbin/nginx /usr/sbin/nginx
+COPY --from=nginx-builder /etc/nginx/mime.types /etc/nginx/mime.types
+COPY --from=nginx-builder /etc/nginx/fastcgi.conf /etc/nginx/fastcgi.conf
+COPY --from=nginx-builder /var/lib/nginx /var/lib/nginx
+# create the log folder and make the logfiles links to stdout/stderr so docker logs will catch it
+RUN mkdir -p /var/log/nginx \
+    && ln -sf /dev/stdout /var/log/nginx/access.log \
+    && ln -sf /dev/stderr /var/log/nginx/error.log
+ADD nginx.conf /etc/nginx/nginx.conf
+ADD common.conf /etc/nginx/common.conf
+RUN mkdir /etc/nginx/conf.d
+RUN mkdir /nginx && chown nobody:nobody /nginx
+USER nobody
+ENTRYPOINT ["nginx"]
