@@ -94,7 +94,7 @@ RUN ./configure \
 USER root
 RUN make install
 
-FROM alpine:3.20
+FROM alpine:3.22
 COPY --from=nginx-builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=nginx-builder /etc/nginx/mime.types /etc/nginx/mime.types
 COPY --from=nginx-builder /etc/nginx/fastcgi.conf /etc/nginx/fastcgi.conf
