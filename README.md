@@ -14,6 +14,7 @@ Use it as a base for a website
 FROM ghcr.io/deltablot/custom-http-nginx
 COPY site/ /app
 COPY site.conf /etc/nginx/conf.d
+ENTRYPOINT ["nginx"]
 ~~~
 
 Example site.conf
