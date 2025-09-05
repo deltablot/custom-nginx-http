@@ -1,7 +1,7 @@
 # This builds an http only nginx, with no extra modules, and no openssl
 FROM alpine:3.20 AS nginx-builder
 
-ENV NGINX_VERSION=1.26.1
+ENV NGINX_VERSION=1.29.1
 # releases can be signed by any key on this page https://nginx.org/en/pgp_keys.html
 # so this might need to be updated for a new release
 # available keys: mdounin, maxim, sb, thresh
