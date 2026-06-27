@@ -1,7 +1,7 @@
 # This builds an http only nginx, with no extra modules, and no openssl
-FROM alpine:3.20 AS nginx-builder
+FROM alpine:3.24 AS nginx-builder
 
-ENV NGINX_VERSION=1.29.1
+ENV NGINX_VERSION=1.30.3
 # releases can be signed by any key on this page https://nginx.org/en/pgp_keys.html
 # so this might need to be updated for a new release
 # available keys: mdounin, maxim, sb, thresh
@@ -9,7 +9,7 @@ ENV NGINX_VERSION=1.29.1
 ENV PGP_SIGNING_KEY_OWNER=thresh
 
 # install dependencies: here we use brotli-dev, newer brotli versions we can remove that and build it
-RUN apk add --no-cache git libc-dev pcre2-dev make gcc binutils gnupg cmake brotli-dev
+RUN apk add --no-cache git libc-dev pcre2-dev pcre2-static make gcc binutils gnupg cmake brotli-dev
 
 # create a builder user and group
 RUN addgroup -S -g 3148 builder && adduser -D -S -G builder -u 3148 builder
@@ -55,7 +55,7 @@ RUN sed -i 's/"Server: nginx" CRLF/"Server: d" CRLF/' src/http/ngx_http_header_f
 RUN ./configure \
         --prefix=/var/lib/nginx \
         --sbin-path=/usr/sbin/nginx \
-        --with-cc-opt='-g0 -O3 -fstack-protector-strong -flto -pie --param=ssp-buffer-size=4 -Wformat -Werror=format-security -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,-z,noexecstack -fPIC -static -static-libgcc' \
+        --with-cc-opt='-g0 -O3 -fstack-protector-strong -flto -pie --param=ssp-buffer-size=4 -Wformat -Werror=format-security -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,-z,noexecstack -fPIC' \
         --with-ld-opt='-static' \
         --modules-path=/usr/lib/nginx/modules \
         --conf-path=/etc/nginx/nginx.conf \
@@ -94,7 +94,7 @@ RUN ./configure \
 USER root
 RUN make install
 
-FROM alpine:3.22
+FROM alpine:3.24
 COPY --from=nginx-builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=nginx-builder /etc/nginx/mime.types /etc/nginx/mime.types
 COPY --from=nginx-builder /etc/nginx/fastcgi.conf /etc/nginx/fastcgi.conf
