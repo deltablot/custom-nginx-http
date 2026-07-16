@@ -18,8 +18,13 @@ WORKDIR /build
 USER builder
 
 # clone the nginx modules
-RUN git clone --recurse-submodules https://github.com/google/ngx_brotli && cd ngx_brotli/deps/brotli && mkdir out && cd out \
-    && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed .. \
+ARG NGX_BROTLI_COMMIT=a71f9312c2deb28875acc7bacfdd5695a111aa53
+RUN git clone https://github.com/google/ngx_brotli \
+    && cd ngx_brotli \
+    && git checkout "$NGX_BROTLI_COMMIT" \
+    && git submodule update --init --recursive \
+    && cd ngx_brotli/deps/brotli && mkdir out && cd out \
+    && cmake -DCMAKE_C_FLAGS="-O2 -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-O2 -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed .. \
     && cmake --build . --config Release --target brotlienc && cd ../../../..
 
 # now start the build
